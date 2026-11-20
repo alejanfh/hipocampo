@@ -1,0 +1,19 @@
+# Plantilla para el vault real. Copia este archivo a `real.local.yaml`
+# (ignorado por git) y pon la ruta real; nunca subas ese archivo.
+name: real
+path: "C:/Users/<tu-usuario>/Documents/segundo-cerebro"
+include:
+  - "**/*.md"
+exclude:
+  - "Plantillas/**"
+  - ".obsidian/**"
+  - "Archivo/Revisiones/**"
+fields:
+  date: fecha
+  area: area
+  tags: etiquetas
+filters:
+  - area
+  - folder
+  - date
+index_notes: false # en el vault real son índices dataview, no hace falta indexarlos como contenido

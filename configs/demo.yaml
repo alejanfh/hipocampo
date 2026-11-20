@@ -1,0 +1,19 @@
+# Configuración del vault demo: la wiki interna de Tramalia (empresa
+# ficticia). Ver docs/DEMO-VAULT.md. El vault en sí se genera en la Fase 1;
+# esta configuración ya puede existir porque no depende de su contenido.
+name: demo
+path: vault-demo/
+include:
+  - "**/*.md"
+exclude:
+  - "Plantillas/**"
+  - ".obsidian/**"
+fields:
+  date: fecha
+  area: departamento
+  tags: etiquetas
+filters:
+  - area
+  - folder
+  - date
+index_notes: true

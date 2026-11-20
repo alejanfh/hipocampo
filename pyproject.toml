@@ -1,0 +1,62 @@
+[project]
+name = "hipocampo"
+version = "0.1.0"
+description = "Local hybrid-search engine over Obsidian vaults, exposed to Claude via MCP."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+dependencies = [
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+    "pyyaml>=6.0",
+    "typer>=0.13",
+    "rich>=13.9",
+]
+
+[project.optional-dependencies]
+# Added phase by phase, kept here so `uv sync --extra <name>` pulls only
+# what that phase needs. Collapse into [project].dependencies once stable.
+ingest = [
+    "sentence-transformers>=3.3",
+    "sqlite-vec>=0.1.6",
+]
+mcp = [
+    "mcp>=1.1",
+]
+api = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+]
+
+[project.scripts]
+hipocampo = "hipocampo.cli:app"
+hipocampo-mcp = "hipocampo.mcp_server:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/hipocampo"]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.7",
+    "pytest>=8.3",
+    "mypy>=1.13",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+check_untyped_defs = true
