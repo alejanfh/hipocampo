@@ -12,9 +12,39 @@ Two vaults ship with the idea:
 - A **demo vault**: the public internal knowledge base of Tramalia, a fictional B2B SaaS company (see [`docs/DEMO-VAULT.md`](docs/DEMO-VAULT.md)).
 - A **real vault**: a personal Obsidian vault, configured locally and never committed.
 
+## Architecture
+
+```mermaid
+flowchart TB
+    subgraph Vault["Vault (Markdown notes)"]
+        demo["demo vault (committed)"]
+        real["real vault (local only)"]
+    end
+
+    Vault -->|ingest: parse, chunk, embed| DB
+
+    subgraph DB["SQLite (data/hipocampo.db)"]
+        notes["notes / chunks"]
+        vec["chunk_embeddings (sqlite-vec)"]
+        fts["chunks_fts (FTS5 / BM25)"]
+        traces["traces"]
+    end
+
+    DB --> Service["retrieval/service.py\nlexical · semantic · RRF fusion · rerank"]
+
+    Service --> MCP["MCP server (stdio)"]
+    Service --> API["FastAPI /search"]
+    Service --> Eval["eval runner\nrecall@5, MRR"]
+
+    MCP --> Claude["Claude Desktop / Claude Code\n(reads, answers, cites notes)"]
+    API --> Web["Next.js web\nexplainable search UI"]
+```
+
+One retrieval service, three thin entry points (MCP, HTTP, evaluation) — none of them hold logic, they only call the service. See [`docs/SPEC.md`](docs/SPEC.md) §5 for the full version.
+
 ## Status
 
-Phase 0 (project skeleton): in progress. See [`docs/PLAN.md`](docs/PLAN.md) for the full roadmap and [`docs/aprendizajes/`](docs/aprendizajes/) for what's been learned so far.
+Phase 0 (project skeleton): done. See [`docs/PLAN.md`](docs/PLAN.md) for the full roadmap, and [`docs/aprendizajes/00-fase-0.md`](docs/aprendizajes/00-fase-0.md) for a plain-language, no-jargon walkthrough of exactly what's in this repo so far and why (what each library replaces, with real code from this project — in Spanish, like the rest of `docs/`).
 
 ## Getting started (Windows, native — no WSL2, no Docker)
 
