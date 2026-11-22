@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 360" width="680" height="360" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif" role="img" aria-labelledby="t d">
+  <title id="t">Distancia coseno</title>
+  <desc id="d">Tres vectores desde el origen. A (1,2) y B (2,4) apuntan en la misma dirección: distancia coseno 0 aunque B sea el doble de largo. C (4,1) forma un ángulo con A: distancia coseno de unos 0,35.</desc>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="context-stroke"/></marker>
+    <marker id="ab" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#2563eb"/></marker>
+    <marker id="ag" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#7c3aed"/></marker>
+    <marker id="ao" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#ea580c"/></marker>
+    <marker id="ax" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#94a3b8"/></marker>
+  </defs>
+  <rect x="0" y="0" width="680" height="360" rx="14" fill="#ffffff"/>
+  <text x="340" y="32" text-anchor="middle" font-size="17" font-weight="600" fill="#0f172a">Coseno: importa hacia dónde apuntan, no cuánto miden</text>
+
+  <line x1="80" y1="310" x2="80" y2="60" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#ax)"/>
+  <line x1="80" y1="310" x2="320" y2="310" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#ax)"/>
+
+  <!-- B por debajo para que A se vea encima -->
+  <line x1="80" y1="310" x2="177" y2="116" stroke="#7c3aed" stroke-width="4" marker-end="url(#ag)" stroke-linecap="round"/>
+  <line x1="80" y1="310" x2="128" y2="214" stroke="#2563eb" stroke-width="5" marker-end="url(#ab)" stroke-linecap="round"/>
+  <line x1="80" y1="310" x2="276" y2="262" stroke="#ea580c" stroke-width="4" marker-end="url(#ao)" stroke-linecap="round"/>
+
+  <path d="M126.6,298.4 A48,48 0 0 0 101.5,267.1" fill="none" stroke="#0f172a" stroke-width="1.5"/>
+  <text x="128" y="282" font-size="13" fill="#0f172a">θ</text>
+
+  <text x="116" y="216" text-anchor="end" font-size="14" font-weight="600" fill="#1d4ed8">A (1,2)</text>
+  <text x="186" y="112" font-size="14" font-weight="600" fill="#6d28d9">B (2,4)</text>
+  <text x="284" y="262" font-size="14" font-weight="600" fill="#c2410c">C (4,1)</text>
+
+  <g font-size="14" fill="#334155">
+    <text x="360" y="84" font-weight="600" fill="#0f172a">distancia coseno = 1 − (A·B) / (|A|·|B|)</text>
+
+    <text x="360" y="124" font-weight="600" fill="#6d28d9">A frente a B</text>
+    <text x="360" y="146">misma dirección → coseno 1 → distancia 0</text>
+    <text x="360" y="166" font-size="12" fill="#64748b">(con L2 estarían a √5 ≈ 2,24: B es más largo)</text>
+
+    <text x="360" y="206" font-weight="600" fill="#c2410c">A frente a C</text>
+    <text x="360" y="228">A·C = 1·4 + 2·1 = 6</text>
+    <text x="360" y="248">|A|·|C| = √5 · √17 ≈ 9,22</text>
+    <text x="360" y="268">coseno ≈ 0,65 → distancia ≈ 0,35</text>
+
+    <text x="360" y="306" font-size="13" fill="#475569">Por eso un texto corto y uno largo sobre</text>
+    <text x="360" y="324" font-size="13" fill="#475569">lo mismo pueden quedar a distancia ~0.</text>
+  </g>
+</svg>

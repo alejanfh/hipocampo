@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 380" width="680" height="380" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif" role="img" aria-labelledby="t d">
+  <title id="t">Distancia Manhattan (L1) frente a euclídea (L2)</title>
+  <desc id="d">Entre P1 (0,1) y P2 (2,3) la distancia euclídea es la línea recta, raíz de 8, unos 2,83. La Manhattan solo se mueve en horizontal o vertical, como por las calles del Eixample, y mide 4 por cualquier camino en escalera.</desc>
+  <defs>
+    <pattern id="grid" width="80" height="80" patternUnits="userSpaceOnUse" x="80" y="80">
+      <rect width="80" height="80" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="1.5"/>
+      <rect x="10" y="10" width="60" height="60" rx="8" fill="#e2e8f0"/>
+    </pattern>
+  </defs>
+  <rect x="0" y="0" width="680" height="380" rx="14" fill="#ffffff"/>
+  <text x="340" y="32" text-anchor="middle" font-size="17" font-weight="600" fill="#0f172a">Dos formas de medir «cerca»</text>
+
+  <!-- cuadrícula tipo manzanas -->
+  <rect x="80" y="80" width="240" height="240" fill="url(#grid)"/>
+  <g font-size="11" fill="#64748b" text-anchor="middle">
+    <text x="80" y="338">0</text><text x="160" y="338">1</text><text x="240" y="338">2</text><text x="320" y="338">3</text>
+  </g>
+  <g font-size="11" fill="#64748b" text-anchor="end">
+    <text x="70" y="324">0</text><text x="70" y="244">1</text><text x="70" y="164">2</text><text x="70" y="84">3</text>
+  </g>
+
+  <!-- camino alternativo (también mide 4) -->
+  <polyline points="80,240 80,160 240,160 240,80" fill="none" stroke="#f87171" stroke-width="3" stroke-dasharray="3 6" stroke-linecap="round"/>
+  <!-- camino manhattan -->
+  <polyline points="80,240 160,240 160,160 240,160 240,80" fill="none" stroke="#dc2626" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"/>
+  <!-- euclídea -->
+  <line x1="80" y1="240" x2="240" y2="80" stroke="#2563eb" stroke-width="4" stroke-dasharray="10 7" stroke-linecap="round"/>
+
+  <circle cx="80" cy="240" r="9" fill="#0f172a"/>
+  <text x="62" y="226" text-anchor="end" font-size="14" font-weight="600" fill="#0f172a">P1 (0,1)</text>
+  <circle cx="240" cy="80" r="9" fill="#0f172a"/>
+  <text x="256" y="68" font-size="14" font-weight="600" fill="#0f172a">P2 (2,3)</text>
+
+  <!-- panel de fórmulas -->
+  <g font-size="14" fill="#334155">
+    <rect x="370" y="80" width="12" height="12" fill="#2563eb"/>
+    <text x="392" y="91" font-weight="600" fill="#1d4ed8">L2 · euclídea (en línea recta)</text>
+    <text x="392" y="115">√((2−0)² + (3−1)²) = √8 ≈ 2,83</text>
+
+    <rect x="370" y="150" width="12" height="12" fill="#dc2626"/>
+    <text x="392" y="161" font-weight="600" fill="#b91c1c">L1 · Manhattan (por las calles)</text>
+    <text x="392" y="185">|2−0| + |3−1| = 2 + 2 = 4</text>
+    <text x="392" y="207" font-size="12" fill="#64748b">Cualquier camino en escalera mide 4</text>
+    <text x="392" y="225" font-size="12" fill="#64748b">(el punteado claro también).</text>
+
+    <text x="370" y="276" font-size="13" fill="#475569">Mismos puntos, números distintos:</text>
+    <text x="370" y="296" font-size="13" fill="#475569">la métrica decide qué significa</text>
+    <text x="370" y="316" font-size="13" fill="#475569">estar cerca.</text>
+  </g>
+</svg>

@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 440" width="640" height="440" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif" role="img" aria-labelledby="t d">
+  <title id="t">Espacio de embeddings en 2D</title>
+  <desc id="d">Chunks del vault demo colocados en un plano: los de cada tema se agrupan. La Consulta cae dentro del grupo de RRHH y el círculo a su alrededor marca los Chunks que se recuperan.</desc>
+  <defs>
+    <marker id="ax" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#475569"/></marker>
+  </defs>
+  <rect x="0" y="0" width="640" height="440" rx="14" fill="#ffffff"/>
+  <text x="320" y="30" text-anchor="middle" font-size="17" font-weight="600" fill="#0f172a">Cada Chunk es un punto; lo parecido queda cerca</text>
+
+  <!-- ejes -->
+  <line x1="60" y1="360" x2="60" y2="50" stroke="#475569" stroke-width="2" marker-end="url(#ax)"/>
+  <line x1="60" y1="360" x2="610" y2="360" stroke="#475569" stroke-width="2" marker-end="url(#ax)"/>
+  <text x="600" y="382" text-anchor="end" font-size="12" fill="#64748b">dimensión 1</text>
+  <text x="48" y="62" text-anchor="end" font-size="12" fill="#64748b" transform="rotate(-90 48 62)">dimensión 2</text>
+
+  <!-- cluster: precios y planes -->
+  <g fill="#f59e0b" stroke="#b45309" stroke-width="1.5">
+    <circle cx="130" cy="100" r="6"/><circle cx="152" cy="88" r="6"/><circle cx="172" cy="114" r="6"/>
+    <circle cx="140" cy="132" r="6"/><circle cx="166" cy="142" r="6"/><circle cx="116" cy="122" r="6"/>
+  </g>
+  <text x="145" y="172" text-anchor="middle" font-size="13" fill="#b45309" font-weight="600">Precios y planes</text>
+
+  <!-- cluster: reservas y acceso -->
+  <g fill="#10b981" stroke="#047857" stroke-width="1.5">
+    <circle cx="470" cy="282" r="6"/><circle cx="498" cy="270" r="6"/><circle cx="514" cy="296" r="6"/>
+    <circle cx="478" cy="308" r="6"/><circle cx="504" cy="318" r="6"/><circle cx="452" cy="300" r="6"/>
+  </g>
+  <text x="485" y="345" text-anchor="middle" font-size="13" fill="#047857" font-weight="600">Reservas y acceso</text>
+
+  <!-- cluster: RRHH -->
+  <circle cx="370" cy="155" r="50" fill="#dbeafe" fill-opacity="0.55" stroke="#2563eb" stroke-width="2" stroke-dasharray="6 5"/>
+  <g fill="#3b82f6" stroke="#1d4ed8" stroke-width="1.5">
+    <circle cx="340" cy="140" r="6"/><circle cx="365" cy="128" r="6"/><circle cx="382" cy="162" r="6"/>
+    <circle cx="350" cy="172" r="6"/><circle cx="396" cy="140" r="6"/><circle cx="404" cy="176" r="6"/>
+  </g>
+  <g fill="#ffffff" stroke="#64748b" stroke-width="1.5">
+    <circle cx="326" cy="196" r="6"/><circle cx="424" cy="116" r="6"/>
+  </g>
+  <text x="300" y="232" text-anchor="middle" font-size="13" fill="#1d4ed8" font-weight="600">RRHH (teletrabajo, vacaciones…)</text>
+
+  <!-- consulta -->
+  <path d="M370,143 L373.5,151 L382,152 L375.5,157.5 L377.5,166 L370,161.5 L362.5,166 L364.5,157.5 L358,152 L366.5,151 Z" fill="#dc2626" stroke="#7f1d1d" stroke-width="1"/>
+  <line x1="380" y1="146" x2="420" y2="88" stroke="#dc2626" stroke-width="1.5"/>
+  <text x="424" y="66" font-size="13" fill="#dc2626" font-weight="600">Consulta</text>
+  <text x="424" y="82" font-size="12" fill="#334155">«¿cuántos días de teletrabajo hay?»</text>
+  <line x1="370" y1="155" x2="420" y2="155" stroke="#2563eb" stroke-width="1.5"/>
+  <text x="426" y="159" font-size="11" fill="#1d4ed8">radio</text>
+
+  <!-- leyenda -->
+  <g font-size="12" fill="#334155">
+    <circle cx="80" cy="398" r="6" fill="#3b82f6" stroke="#1d4ed8" stroke-width="1.5"/>
+    <text x="92" y="402">dentro del círculo: se recupera</text>
+    <circle cx="290" cy="398" r="6" fill="#ffffff" stroke="#64748b" stroke-width="1.5"/>
+    <text x="302" y="402">fuera: se descarta</text>
+    <text x="320" y="426" text-anchor="middle" fill="#64748b" font-style="italic">en Hipocampo son 384 dimensiones, no 2</text>
+  </g>
+</svg>
