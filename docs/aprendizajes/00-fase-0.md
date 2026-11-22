@@ -36,6 +36,7 @@ class Settings(BaseSettings):
 
 ```python
 import os
+
 database_path = os.environ.get("DATABASE_PATH", "data/hipocampo.db")
 # y si alguien pone DATABASE_PATH=42, tu código no se entera hasta que
 # explota mucho más tarde, al intentar usarlo como una ruta de archivo.
@@ -84,12 +85,12 @@ Python abre ese archivo, lo lee con el motor de SQLite (viene incluido en Python
 
 ```python
 def run_migrations(conn, migrations_dir=MIGRATIONS_DIR):
-    done = applied_migrations(conn)          # { "001_init" } o vacío
+    done = applied_migrations(conn)  # { "001_init" } o vacío
     for path in sorted(migrations_dir.glob("*.sql")):
-        version = path.stem                   # "001_init"
+        version = path.stem  # "001_init"
         if version in done:
-            continue                            # ya se ejecutó, no la repitas
-        conn.executescript(path.read_text())   # ejecuta el CREATE TABLE...
+            continue  # ya se ejecutó, no la repitas
+        conn.executescript(path.read_text())  # ejecuta el CREATE TABLE...
         conn.execute("INSERT INTO schema_migrations VALUES (?)", (version,))
 ```
 
@@ -106,15 +107,16 @@ Mira `src/hipocampo/cli.py`:
 ```python
 app = typer.Typer()
 
+
 @app.command()
-def init_db() -> None:
-    ...
+def init_db() -> None: ...
 ```
 
 **Sin `typer`**, para que `uv run hipocampo init-db` funcione desde la terminal tendrías que parsear `sys.argv` a mano:
 
 ```python
 import sys
+
 if sys.argv[1] == "init-db":
     init_db()
 elif sys.argv[1] == "version":
