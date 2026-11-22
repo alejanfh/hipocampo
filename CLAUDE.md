@@ -22,7 +22,7 @@ Lee antes de trabajar:
 - Python 3.12 con `uv`. Antes de dar algo por terminado: `uv run ruff check --fix`, `uv run ruff format`, `uv run pytest`.
 - Capas: `retrieval/service.py` tiene la lógica; `mcp_server.py`, `api.py` y `cli.py` son finos y solo llaman al servicio; el acceso a SQLite está en `storage/`.
 - SQL plano en `db/migrations/NNN_*.sql`. Nunca cambies una migración ya aplicada: añade otra.
-- Código, nombres, comentarios, commits y README en **inglés**. CONTEXT.md, docs/ (SPEC, PLAN, ADRs, aprendizajes) en **español**.
+- Código, nombres, comentarios y commits en **inglés**. README, CONTEXT.md y docs/ (SPEC, PLAN, ADRs, aprendizajes) en **español**: el README explica qué es un RAG y es material de aprendizaje.
 - Nada de APIs de pago ni servicios en la nube. Modelos en local y en CPU.
 - Entorno: Windows nativo (sin WSL2 ni Docker) en un Ryzen 5 1600 con 16 GB. Procesa embeddings por lotes y no cargues dos modelos grandes a la vez.
 
