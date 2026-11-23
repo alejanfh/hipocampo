@@ -13,11 +13,6 @@ configs/*.local.yaml
 eval/*.local.yaml
 eval/results/*real*
 
-# Database (local, never shared)
-data/*.db
-data/*.db-journal
-data/*.db-wal
-
 # Node / web
 web/node_modules/
 web/.next/

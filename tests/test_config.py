@@ -8,7 +8,7 @@ def test_settings_defaults(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
     settings = Settings(_env_file=None)  # type: ignore[call-arg]
 
-    assert settings.database_path == Path("data/hipocampo.db")
+    assert settings.database_url == "postgresql://hipocampo:hipocampo@localhost:5432/hipocampo"
     assert settings.vault_config == Path("configs/demo.yaml")
     assert settings.embedding_model == "intfloat/multilingual-e5-small"
 

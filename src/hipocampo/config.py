@@ -1,7 +1,7 @@
 """Two layers of configuration, kept deliberately separate (see CONTEXT.md
 "Configuración de vault" and docs/SPEC.md §7):
 
-- `Settings`: machine-level, from `.env` (which database file, which vault
+- `Settings`: machine-level, from `.env` (which database server, which vault
   config to use, which embedding model). Never committed.
 - `VaultConfig`: vault-level, from `configs/<vault>.yaml` (where the notes
   live, which frontmatter fields mean what). One file per vault; the demo
@@ -22,7 +22,7 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    database_path: Path = Field(default=Path("data/hipocampo.db"))
+    database_url: str = Field(default="postgresql://hipocampo:hipocampo@localhost:5432/hipocampo")
     vault_config: Path = Field(default=Path("configs/demo.yaml"))
     embedding_model: str = Field(default="intfloat/multilingual-e5-small")
 

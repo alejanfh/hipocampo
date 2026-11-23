@@ -6,7 +6,9 @@ prints the result. New commands land here as later phases add them
 
 from __future__ import annotations
 
+import psycopg
 import typer
+from psycopg.conninfo import conninfo_to_dict
 from rich.console import Console
 
 from hipocampo.config import Settings
@@ -18,9 +20,17 @@ console = Console()
 
 @app.command()
 def init_db() -> None:
-    """Create the database file (if missing) and apply any pending migrations."""
+    """Apply any pending migrations to the database in DATABASE_URL."""
     settings = Settings()
-    conn = connect(settings.database_path)
+    try:
+        conn = connect(settings.database_url)
+    except psycopg.OperationalError as exc:
+        console.print(f"[red]Can't connect to {_redact(settings.database_url)}[/red]\n{exc}")
+        console.print(
+            "Is the PostgreSQL service running and does the database exist? "
+            "See README, 'Cómo empezar'."
+        )
+        raise typer.Exit(code=1) from exc
     try:
         applied = run_migrations(conn)
     finally:
@@ -30,7 +40,14 @@ def init_db() -> None:
         console.print(f"[green]Applied {len(applied)} migration(s):[/green] {', '.join(applied)}")
     else:
         console.print("[dim]Database already up to date.[/dim]")
-    console.print(f"Database file: {settings.database_path.resolve()}")
+    console.print(f"Database: {_redact(settings.database_url)}")
+
+
+def _redact(url: str) -> str:
+    """Describe a connection URL without its password, for printing."""
+    parts = conninfo_to_dict(url)
+    host, port = parts.get("host", "localhost"), parts.get("port", "5432")
+    return f"{parts.get('dbname', '?')} at {host}:{port} (user {parts.get('user', '?')})"
 
 
 @app.command()
