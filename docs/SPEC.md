@@ -23,7 +23,7 @@ Un **motor de búsqueda** sobre vaults de Obsidian (híbrido, con filtros y rera
 | Restricción | Consecuencia |
 |---|---|
 | **Coste cero.** Nada de APIs de pago ni servicios en la nube. | Embeddings y rerank en local. Quien redacta la respuesta es Claude vía MCP con la suscripción ([ADR 0001](adr/0001-solo-busqueda-y-claude-por-mcp.md)). |
-| **Windows nativo, sin WSL2 ni Docker, con Ryzen 5 1600 y 16 GB de RAM.** | SQLite + `sqlite-vec` como base de datos, un solo archivo, sin servidor que instalar ([ADR 0002](adr/0002-sqlite-en-windows-nativo.md)). Modelos pequeños que corran en CPU. |
+| **Windows nativo, sin WSL2 ni Docker, con Ryzen 5 1600 y 16 GB de RAM.** | Postgres 17 + pgvector instalados nativos en Windows: Postgres como servicio, pgvector compilado una vez ([ADR 0007](adr/0007-postgres-pgvector-en-windows-nativo.md), guía en [INSTALACION-WINDOWS.md](INSTALACION-WINDOWS.md)). Modelos pequeños que corran en CPU. |
 | **El vault real nunca sale del ordenador** ni se sube al repo. | Ruta en `.env`, su configuración y sus preguntas en archivos ignorados por git. |
 | **Alejandro no escribe código a mano**: Claude Code lo escribe, él lo entiende y lo revisa. | Cada fase acaba con preguntas de comprensión y una nota de aprendizaje (ver PLAN.md). |
 | 4-5 h por semana, más en días de teletrabajo. | Fases cortas que dejan algo medible. |
@@ -45,7 +45,7 @@ Un **motor de búsqueda** sobre vaults de Obsidian (híbrido, con filtros y rera
                                  │ ingest (parse → chunk → embed)
                                  ▼
              ┌──────────────────────────────────────────┐
-             │ SQLite + sqlite-vec (archivo local)      │
+             │ Postgres 17 + pgvector (servicio local)  │
              │ notes · chunks(+embedding) · traces      │
              └──────────────────┬───────────────────────┘
                                 │
@@ -73,8 +73,8 @@ Idea clave: **un único servicio de búsqueda** y tres puertas de entrada finas 
 | Paquetes | `uv` | Rápido, un solo comando, el estándar actual. |
 | Calidad | `ruff` (lint + formato), `pytest`, `mypy` en modo básico | Feedback inmediato al revisar lo que escribe Claude. |
 | Modelos de datos | `pydantic` v2 | Validación y tipos, igual que en FastAPI. |
-| Base de datos | SQLite + extensión `sqlite-vec`, driver estándar `sqlite3` | Un archivo, cero instalación en Windows. Ver ADR 0002. |
-| Migraciones | SQL plano numerado (`db/migrations/001_*.sql`) | Ver el SQL tal cual ayuda a aprender, con o sin servidor. |
+| Base de datos | Postgres 17 + `pgvector`, driver `psycopg` 3 (+ paquete `pgvector` para numpy) | Lo que verás en clientes: tabla normal con columna `vector` e índice HNSW. Ver ADR 0007. |
+| Migraciones | SQL plano numerado (`db/migrations/001_*.sql`) | Ver el SQL tal cual ayuda a aprender. Alembic, si hace falta, después. |
 | Búsqueda léxica | `bm25s` + `PyStemmer` (español) | BM25 de verdad, rápido, y enseña stemming y stopwords. |
 | Embeddings | `sentence-transformers` con `intfloat/multilingual-e5-small` (384 dim) | Corre en CPU. Comparar una vez con `BAAI/bge-m3` (1024 dim). Ver ADR 0005. |
 | Rerank | Cross-encoder multilingüe pequeño (`cross-encoder/mmarco-mMiniLMv2-L12-H384-v1`) | Corre en CPU sobre ~20 candidatos. |
@@ -90,7 +90,8 @@ Versiones exactas: las fija Claude Code en la fase 0 con la última estable de c
 ### `.env` (no se sube)
 
 ```
-DATABASE_PATH=data/hipocampo.db
+DATABASE_URL=postgresql://hipocampo:hipocampo@localhost:5432/hipocampo
+TEST_DATABASE_URL=postgresql://hipocampo:hipocampo@localhost:5432/hipocampo_test   # la vacían los tests
 VAULT_CONFIG=configs/demo.yaml          # o configs/real.local.yaml
 EMBEDDING_MODEL=intfloat/multilingual-e5-small
 ```
@@ -130,61 +131,61 @@ index_notes: true                 # notas con el mismo nombre que su carpeta (í
 
 ## 9. Modelo de datos
 
+El esquema real está en [`db/migrations/001_init.sql`](../db/migrations/001_init.sql).
+
 ```sql
--- requiere cargar la extensión sqlite-vec en cada conexión (ver storage/db.py)
+CREATE EXTENSION IF NOT EXISTS vector;          -- pgvector; la primera vez la activa un superusuario
 
 CREATE TABLE notes (
-  id            INTEGER PRIMARY KEY,
+  id            BIGSERIAL PRIMARY KEY,
   vault         TEXT NOT NULL,
-  path          TEXT NOT NULL,                -- relativa al vault
+  path          TEXT NOT NULL,                  -- relativa al vault
   title         TEXT NOT NULL,
   folder        TEXT NOT NULL,
   area          TEXT,
-  note_date     TEXT,                         -- ISO 8601 (YYYY-MM-DD); SQLite no tiene tipo fecha
-  tags          TEXT NOT NULL DEFAULT '[]',    -- JSON array
-  frontmatter   TEXT NOT NULL DEFAULT '{}',    -- JSON object
-  links         TEXT NOT NULL DEFAULT '[]',    -- JSON array de títulos de [[wikilinks]] salientes
+  note_date     DATE,
+  tags          TEXT[] NOT NULL DEFAULT '{}',
+  frontmatter   JSONB NOT NULL DEFAULT '{}',
+  links         TEXT[] NOT NULL DEFAULT '{}',   -- títulos de [[wikilinks]] salientes
   content_hash  TEXT NOT NULL,
-  updated_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE (vault, path)
 );
 
 CREATE TABLE chunks (
-  id            INTEGER PRIMARY KEY,
-  note_id       INTEGER NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
-  ordinal       INTEGER NOT NULL,              -- posición dentro de la nota
-  heading_path  TEXT NOT NULL,                 -- "Política > Excepciones"
-  text          TEXT NOT NULL,                 -- lo que se muestra
-  indexed_text  TEXT NOT NULL,                 -- encabezado de contexto + text
-  token_count   INTEGER NOT NULL,
+  id            BIGSERIAL PRIMARY KEY,
+  note_id       BIGINT NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+  ordinal       INT NOT NULL,                   -- posición dentro de la nota
+  heading_path  TEXT NOT NULL,                  -- "Política > Excepciones"
+  text          TEXT NOT NULL,                  -- lo que se muestra
+  indexed_text  TEXT NOT NULL,                  -- encabezado de contexto + text
+  token_count   INT NOT NULL,
+  embedding     vector(384),                    -- NULL hasta la fase 3; dimensión según el modelo (ADR 0005)
   UNIQUE (note_id, ordinal)
 );
 
--- Tabla virtual de sqlite-vec: el embedding vive aparte, enlazado por rowid = chunks.id
-CREATE VIRTUAL TABLE chunk_embeddings USING vec0(
-  embedding FLOAT[384]                         -- dimensión según el modelo (ver ADR 0005)
-);
-
--- Búsqueda léxica con FTS5 (BM25 incorporado) en vez de bm25s en memoria
-CREATE VIRTUAL TABLE chunks_fts USING fts5(
-  indexed_text, content='chunks', content_rowid='id'
-);
+CREATE INDEX ON chunks USING hnsw (embedding vector_cosine_ops);
 
 CREATE TABLE traces (
-  id            INTEGER PRIMARY KEY,
-  created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  source        TEXT NOT NULL,                 -- mcp | web | eval | cli
+  id            BIGSERIAL PRIMARY KEY,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  source        TEXT NOT NULL,                  -- mcp | web | eval | cli
   vault         TEXT NOT NULL,
   query         TEXT NOT NULL,
   strategy      TEXT NOT NULL,
-  filters       TEXT NOT NULL DEFAULT '{}',    -- JSON
-  params        TEXT NOT NULL DEFAULT '{}',    -- JSON: top_k, pesos, modelo...
-  results       TEXT NOT NULL,                 -- JSON: [{chunk_id, note_path, score, signals}]
-  latency_ms    TEXT NOT NULL                  -- JSON: {lexical, semantic, rerank, total}
+  filters       JSONB NOT NULL DEFAULT '{}',
+  params        JSONB NOT NULL DEFAULT '{}',    -- top_k, pesos, modelo...
+  results       JSONB NOT NULL,                 -- [{chunk_id, note_path, score, signals}]
+  latency_ms    JSONB NOT NULL                  -- {lexical, semantic, rerank, total}
 );
 ```
 
-Nota de diseño: se cambió `bm25s` (en memoria) por **FTS5**, la búsqueda de texto completo incorporada en SQLite, porque ya trae BM25 y evita mantener un índice aparte; se sigue aprendiendo stemming y tokenización, ahora configurando el tokenizador de FTS5. `sqlite-vec` sustituye a pgvector: misma idea (vector + índice), motor distinto. Cambiar de modelo de embeddings cambia la dimensión: se re-crea `chunk_embeddings` del vault. Se documenta en la nota de aprendizaje de la fase 3.
+Notas de diseño:
+
+- El embedding es **una columna más de `chunks`**: el camino de vuelta (vector cercano → Chunk → Nota) es un `JOIN` normal. Es nullable porque la fase 2 guarda Chunks antes de que la fase 3 calcule embeddings.
+- **HNSW** es un índice aproximado: no compara la Consulta con todos los vectores, sino que recorre un grafo de vecinos. Con cientos de Notas una búsqueda exacta también valdría; el índice está para aprender cómo se hace en producción y medir su efecto (`hnsw.ef_search`) en la fase 3.
+- Cambiar de modelo de embeddings cambia la dimensión: nueva migración que altera `vector(384)` y re-indexa. Se documenta en la nota de aprendizaje de la fase 3.
+- La búsqueda léxica es `bm25s` en Python, no la de Postgres: `tsvector` + `ts_rank` no es BM25. Compararlas es un experimento opcional.
 
 ## 10. Búsqueda
 
@@ -198,7 +199,7 @@ def search(query: str, *, strategy: Strategy = "hybrid_rerank",
 | Estrategia | Cómo funciona |
 |---|---|
 | `lexical` | BM25 sobre `indexed_text` con stemming español y stopwords. |
-| `semantic` | Embedding de `query: <consulta>` y vecinos más cercanos por coseno (`sqlite-vec`, búsqueda exacta: el vault cabe de sobra para no necesitar un índice aproximado). |
+| `semantic` | Embedding de `query: <consulta>` y vecinos más cercanos por coseno (`embedding <=> %s`, índice HNSW de pgvector). |
 | `hybrid` | Top 50 de cada una, fusionados con **Reciprocal Rank Fusion** (`score = Σ 1/(60 + posición)`). |
 | `hybrid_rerank` | `hybrid` y luego el cross-encoder puntúa los 20 primeros contra la consulta. Por defecto. |
 
@@ -288,10 +289,9 @@ Detallado en [DEMO-VAULT.md](DEMO-VAULT.md). Resumen: base de conocimiento de un
 hipocampo/
 ├── CLAUDE.md                  # cómo trabaja Claude Code aquí
 ├── CONTEXT.md                 # glosario
-├── README.md                  # en inglés, para GitHub
+├── README.md                  # en español: qué es un RAG y cómo empezar
 ├── pyproject.toml · uv.lock · .env.example · .gitignore
 ├── configs/                   # demo.yaml, real.example.yaml (*.local.yaml ignorados)
-├── data/                      # hipocampo.db (ignorado por git)
 ├── db/migrations/             # 001_init.sql, ...
 ├── src/hipocampo/
 │   ├── config.py              # .env + vault.yaml → objetos pydantic
@@ -310,21 +310,21 @@ hipocampo/
 ├── web/                       # Next.js
 ├── .claude/commands/          # evaluar-respuestas.md, nueva-fase.md
 └── docs/
-    ├── SPEC.md · PLAN.md · DEMO-VAULT.md
+    ├── SPEC.md · PLAN.md · DEMO-VAULT.md · INSTALACION-WINDOWS.md
     ├── adr/
     └── aprendizajes/          # una nota por fase, en español
 ```
 
 ## 17. Seguridad y privacidad
 
-- `.gitignore` incluye `.env`, `configs/*.local.yaml`, `eval/*.local.yaml`, `eval/results/*real*`, `data/*.db`.
+- `.gitignore` incluye `.env`, `configs/*.local.yaml`, `eval/*.local.yaml`, `eval/results/*real*`.
 - Un test comprueba que ningún archivo versionado contiene la ruta del vault real ni nombres de su carpeta raíz.
-- Las Trazas del vault real se quedan en el archivo `.db` local (fuera del repo). Nunca se exportan.
+- Las Trazas del vault real se quedan en el Postgres local (fuera del repo). Nunca se exportan.
 - `read_note` solo lee rutas dentro del vault configurado (nada de `../`).
 
 ## 18. Cómo sabremos que está bien (v1)
 
-- `hipocampo ingest` y `hipocampo eval search` funcionan de cero en un Windows limpio (PowerShell o cmd) siguiendo el README, sin instalar nada aparte de Python y `uv`.
+- `hipocampo ingest` y `hipocampo eval search` funcionan de cero en un Windows limpio (PowerShell o cmd) siguiendo el README y [INSTALACION-WINDOWS.md](INSTALACION-WINDOWS.md) (Python con `uv`, Postgres 17 + pgvector nativos).
 - Tabla del README con, como mínimo: BM25 → vectores (e5-small) → vectores (bge-m3) → híbrida → híbrida + rerank, con recall@5, MRR, temporal@1 y latencia.
 - Tabla de evaluación de respuestas: contexto completo vs agéntica con Hipocampo vs agéntica con grep, en demo y en real.
 - Claude Desktop responde preguntas del vault demo citando Notas vía MCP.

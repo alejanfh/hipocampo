@@ -44,7 +44,7 @@ sequenceDiagram
     actor A as Tú
     participant C as Claude (Desktop / Code)
     participant H as Hipocampo (MCP)
-    participant DB as SQLite + sqlite-vec
+    participant DB as Postgres + pgvector
 
     A->>C: ¿Cuántos días de teletrabajo hay?
     C->>H: search_notes("días de teletrabajo")
@@ -77,23 +77,40 @@ Para montar esa búsqueda hacen falta tres cosas:
 | Pieza | Para qué | En Hipocampo |
 |---|---|---|
 | **1. Un modelo de embedding** | Pasar de texto a vector. A los Chunks al indexar y a la Consulta al buscar. | `intfloat/multilingual-e5-small`, en local y en CPU. 384 dimensiones, entiende español ([ADR 0005](docs/adr/0005-embeddings-locales-e5-small.md)). |
-| **2. Una base de datos que guarde el vector junto a su origen** | No basta con guardar números: cuando un vector sale cerca, tienes que saber de qué Nota venía para poder devolverla y citarla. | SQLite con la extensión `sqlite-vec`. Un único archivo, sin servidor que instalar en Windows ([ADR 0002](docs/adr/0002-sqlite-en-windows-nativo.md)). |
+| **2. Una base de datos que guarde el vector junto a su origen** | No basta con guardar números: cuando un vector sale cerca, tienes que saber de qué Nota venía para poder devolverla y citarla. | Postgres con la extensión `pgvector`, instalado nativo en Windows. Es la combinación más habitual en la industria ([ADR 0007](docs/adr/0007-postgres-pgvector-en-windows-nativo.md)). |
 | **3. Una métrica de distancia** | Definir qué es «estar cerca». | Coseno (siguiente apartado). |
 
 **Sobre la pieza 1.** El modelo corre en el propio ordenador porque es gratis y porque el Vault real (salud, finanzas, personas) no debe salir de él. Un modelo en la nube daría vectores parecidos, pero cada Consulta y cada Nota viajarían a un tercero.
 
-**Sobre la pieza 2.** La forma típica es Postgres con la extensión pgvector, que añade una columna de tipo vector a una tabla normal. Hipocampo hace lo mismo con SQLite: el vector vive en una tabla virtual de `sqlite-vec` y se enlaza con su Chunk por el mismo id, y cada Chunk apunta a su Nota.
+**Sobre la pieza 2.** La forma típica, y la que usa Hipocampo, es Postgres con la extensión pgvector: añade un tipo de columna `vector` a una tabla normal, así que el vector vive en la misma fila que el texto del Chunk, y cada Chunk apunta a su Nota.
 
 ```sql
--- docs/SPEC.md §9 (simplificado)
-CREATE TABLE notes  (id INTEGER PRIMARY KEY, path TEXT, title TEXT, content_hash TEXT, ...);
-CREATE TABLE chunks (id INTEGER PRIMARY KEY, note_id INTEGER REFERENCES notes(id), text TEXT, ...);
+-- db/migrations/001_init.sql (simplificado)
+CREATE EXTENSION vector;
 
--- el vector vive aparte, enlazado por rowid = chunks.id
-CREATE VIRTUAL TABLE chunk_embeddings USING vec0(embedding FLOAT[384]);
+CREATE TABLE notes  (id BIGSERIAL PRIMARY KEY, path TEXT, title TEXT, content_hash TEXT, ...);
+CREATE TABLE chunks (
+  id        BIGSERIAL PRIMARY KEY,
+  note_id   BIGINT REFERENCES notes(id) ON DELETE CASCADE,
+  text      TEXT,
+  embedding vector(384),   -- las 384 coordenadas del Chunk
+  ...
+);
+
+-- índice para encontrar vecinos cercanos sin comparar con todos
+CREATE INDEX ON chunks USING hnsw (embedding vector_cosine_ops);
 ```
 
-Así se hace el camino de vuelta: vector cercano → `chunks.id` → `chunks.note_id` → la Nota que se cita. Se eligió SQLite en vez de Postgres para no tener que instalar un servidor de base de datos ni WSL2 en un Windows modesto. Con cientos de Notas, la búsqueda exacta (comparar con todos los vectores) es instantánea y no hace falta un índice aproximado.
+Así se hace el camino de vuelta: vector cercano → su fila de `chunks` → `chunks.note_id` → la Nota que se cita. Todo en una consulta SQL:
+
+```sql
+SELECT n.title, c.text, c.embedding <=> :consulta AS distancia
+FROM chunks c JOIN notes n ON n.id = c.note_id
+ORDER BY distancia
+LIMIT 8;
+```
+
+El índice **HNSW** es aproximado: en vez de comparar la Consulta con todos los vectores, recorre un grafo de vecinos y casi siempre encuentra los mismos que la búsqueda exacta, mucho más rápido. Con cientos de Notas la búsqueda exacta también sería instantánea, pero el índice es lo que encontrarás en cualquier proyecto real, y medir cuánto se equivoca es parte de la Fase 3.
 
 ## Qué significa «cerca»: L1, L2 y coseno
 
@@ -122,7 +139,7 @@ $$\text{distancia coseno} = 1 - \frac{A \cdot B}{|A|\,|B|}$$
 
 Por eso el coseno es la métrica habitual para texto: una Nota corta y una larga que hablan de lo mismo apuntan en la misma dirección aunque sus vectores «midan» distinto. Y por eso palabras que no se parecen en letras pero sí en significado (médico y enfermera, teletrabajo y remoto) acaban cerca: el modelo ya las colocó apuntando a sitios parecidos.
 
-**En Hipocampo:** búsqueda semántica por **coseno** ([SPEC §10](docs/SPEC.md)). Un detalle útil: si los vectores están normalizados (todos de longitud 1, lo habitual con e5), ordenar por L2 o por coseno da **el mismo orden**, porque en ese caso L2² = 2 − 2·coseno. `sqlite-vec` trae las tres (`vec_distance_l2`, `vec_distance_l1` y `vec_distance_cosine`), así que se puede comprobar midiendo.
+**En Hipocampo:** búsqueda semántica por **coseno** ([SPEC §10](docs/SPEC.md)). Un detalle útil: si los vectores están normalizados (todos de longitud 1, lo habitual con e5), ordenar por L2 o por coseno da **el mismo orden**, porque en ese caso L2² = 2 − 2·coseno. pgvector trae las tres como operadores (`<->` L2, `<+>` L1 y `<=>` coseno), así que se puede comprobar midiendo.
 
 ## Mismo modelo, mismas dimensiones
 
@@ -184,11 +201,11 @@ flowchart LR
         CH --> EP["e5-small<br/>'passage: ' + Chunk"]
     end
 
-    subgraph DB["SQLite (data/hipocampo.db)"]
+    subgraph DB["Postgres + pgvector"]
         direction TB
-        N["notes + chunks"]
-        VEC["chunk_embeddings<br/>(sqlite-vec, 384 dim)"]
-        VEC -.-|"rowid = chunks.id"| N
+        N["notes"]
+        VEC["chunks<br/>(texto + embedding vector(384), índice HNSW)"]
+        VEC -.-|"chunks.note_id"| N
     end
 
     subgraph Q["Consulta: search_notes"]
@@ -199,7 +216,7 @@ flowchart LR
         KNN --> R["Resultados → Claude<br/>responde y cita [[Nota]]"]
     end
 
-    CH --> N
+    CH --> VEC
     EP --> VEC
     KNN <--> VEC
 
@@ -252,8 +269,8 @@ Lo anterior es un RAG semántico mínimo. Hipocampo compara varias **Estrategias
 
 | Estrategia | Cómo funciona |
 |---|---|
-| Léxica (BM25) | Busca por palabras, con FTS5, que ya viene dentro de SQLite. Encuentra «Proveedor B» o «SLA 99,9 %» aunque el vector no los distinga. |
-| Semántica | El círculo de este README: e5-small + `sqlite-vec` + coseno. |
+| Léxica (BM25) | Busca por palabras, con `bm25s` y stemming en español. Encuentra «Proveedor B» o «SLA 99,9 %» aunque el vector no los distinga. |
+| Semántica | El círculo de este README: e5-small + pgvector (HNSW) + coseno. |
 | Híbrida | Las dos, fusionadas con *Reciprocal Rank Fusion*. |
 | Híbrida + rerank | La híbrida, y un cross-encoder reordena los 20 primeros leyendo Consulta y Chunk juntos. Es la estrategia por defecto. |
 
@@ -270,14 +287,13 @@ flowchart TB
 
     Vault -->|"ingest: parsear, trocear, embeddings"| DB
 
-    subgraph DB["SQLite (data/hipocampo.db)"]
-        notes["notes / chunks"]
-        vec["chunk_embeddings (sqlite-vec)"]
-        fts["chunks_fts (FTS5 / BM25)"]
+    subgraph DB["Postgres 17 + pgvector (servicio local)"]
+        notes["notes"]
+        chunks["chunks (texto + embedding, índice HNSW)"]
         traces["traces"]
     end
 
-    DB --> Service["retrieval/service.py<br/>léxica · semántica · fusión RRF · rerank"]
+    DB --> Service["retrieval/service.py<br/>léxica (BM25) · semántica · fusión RRF · rerank"]
 
     Service --> MCP["Servidor MCP (stdio)"]
     Service --> API["FastAPI /search"]
@@ -296,20 +312,25 @@ Detalle completo en [`docs/SPEC.md`](docs/SPEC.md) §5. Para una explicación si
 
 ## Cómo empezar (Windows nativo, sin WSL2 ni Docker)
 
+Hacen falta tres cosas: Python (lo gestiona `uv`), **PostgreSQL 17** y la extensión **pgvector**. Postgres se instala con un asistente; pgvector no tiene instalador para Windows y se compila una vez con las Build Tools de Visual Studio. La guía paso a paso, con los errores típicos y un plan B, está en [`docs/INSTALACION-WINDOWS.md`](docs/INSTALACION-WINDOWS.md).
+
 ```powershell
-# 1. Instalar uv (https://docs.astral.sh/uv/)
+# 1. Postgres 17 + pgvector, usuario `hipocampo` y bases `hipocampo` y `hipocampo_test`
+#    → docs/INSTALACION-WINDOWS.md (pasos 1 a 4)
+
+# 2. Instalar uv (https://docs.astral.sh/uv/)
 powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 
-# 2. Clonar y preparar
+# 3. Clonar y preparar
 git clone https://github.com/alejanfh/hipocampo
 cd hipocampo
 uv sync --dev
-copy .env.example .env
+copy .env.example .env        # DATABASE_URL y TEST_DATABASE_URL
 
-# 3. Crear la base de datos
+# 4. Crear las tablas (aplica db/migrations/)
 uv run hipocampo init-db
 
-# 4. Pasar los tests
+# 5. Pasar los tests (los de base de datos usan hipocampo_test y la vacían)
 uv run pytest
 ```
 
@@ -319,7 +340,7 @@ Versión corta; el razonamiento completo está en [`docs/adr/`](docs/adr/).
 
 | Decisión | Por qué |
 |---|---|
-| SQLite + `sqlite-vec` en vez de Postgres + pgvector | Un archivo y ningún servicio que instalar en Windows. Con cientos de Notas, la búsqueda exacta sobra ([ADR 0002](docs/adr/0002-sqlite-en-windows-nativo.md)). |
+| Postgres + pgvector, nativo en Windows | Es lo habitual en la industria: el vector es una columna más, con SQL, transacciones e índice HNSW. Nativo para no depender de WSL2 ni Docker; el precio es compilar pgvector una vez. Antes fue SQLite + `sqlite-vec` ([ADR 0007](docs/adr/0007-postgres-pgvector-en-windows-nativo.md), que sustituye al [0002](docs/adr/0002-sqlite-en-windows-nativo.md)). |
 | Claude (por MCP) redacta, Hipocampo solo busca | Coste cero: usa una suscripción de Claude que ya existe ([ADR 0001](docs/adr/0001-solo-busqueda-y-claude-por-mcp.md)). |
 | Embeddings locales con e5-small | Gratis, corre en CPU, entiende español y el Vault real no sale del ordenador ([ADR 0005](docs/adr/0005-embeddings-locales-e5-small.md)). |
 | Piezas centrales escritas a mano, sin LangChain ni LlamaIndex | El objetivo es entender cómo funciona, no montar una caja negra ([ADR 0004](docs/adr/0004-piezas-centrales-sin-framework.md)). |
@@ -333,7 +354,7 @@ Se irán rellenando a medida que se ejecute la evaluación de cada fase: recall@
 ## Fuentes
 
 - La estructura de la explicación (el círculo alrededor de la Consulta, las tres piezas, L1/L2/coseno, el mismo modelo, el indexado por hash, el chunking con solape y el bucle de evaluación) sigue el vídeo de **BettaTech** sobre cómo implementó un RAG con pgvector para el chat de su academia: [youtube.com/watch?v=lBimeKh88OU](https://www.youtube.com/watch?v=lBimeKh88OU). Los textos, ejemplos y diagramas de este README son propios y están adaptados a Hipocampo.
-- [`sqlite-vec`](https://github.com/asg017/sqlite-vec) · [`intfloat/multilingual-e5-small`](https://huggingface.co/intfloat/multilingual-e5-small) · [Model Context Protocol](https://modelcontextprotocol.io)
+- [pgvector](https://github.com/pgvector/pgvector) · [psycopg 3](https://www.psycopg.org/psycopg3/) · [`intfloat/multilingual-e5-small`](https://huggingface.co/intfloat/multilingual-e5-small) · [Model Context Protocol](https://modelcontextprotocol.io)
 
 ## Licencia
 
