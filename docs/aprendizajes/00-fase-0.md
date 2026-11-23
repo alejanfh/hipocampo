@@ -27,7 +27,7 @@ Mira `src/hipocampo/config.py`:
 
 ```python
 class Settings(BaseSettings):
-    database_path: Path = Field(default=Path("data/hipocampo.db"))
+    database_url: str = Field(default="postgresql://hipocampo:hipocampo@localhost:5432/hipocampo")
     vault_config: Path = Field(default=Path("configs/demo.yaml"))
     embedding_model: str = Field(default="intfloat/multilingual-e5-small")
 ```
@@ -37,12 +37,13 @@ class Settings(BaseSettings):
 ```python
 import os
 
-database_path = os.environ.get("DATABASE_PATH", "data/hipocampo.db")
-# y si alguien pone DATABASE_PATH=42, tu código no se entera hasta que
-# explota mucho más tarde, al intentar usarlo como una ruta de archivo.
+database_url = os.environ.get("DATABASE_URL", "postgresql://localhost/hipocampo")
+vault_config = os.environ.get("VAULT_CONFIG", "configs/demo.yaml")
+# todo llega como texto: convertirlo a Path, poner valores por defecto y
+# detectar errores de tipo es trabajo tuyo, repetido en cada sitio que lo lea.
 ```
 
-**Con `pydantic-settings`**, `Settings()` lee las variables de entorno (y el archivo `.env`) automáticamente, y además **valida el tipo**: si `DATABASE_PATH` no es una ruta válida, falla al arrancar, no a mitad de ejecución. Es el mismo trabajo que hace Zod cuando validas el body de una request en una API de Next.js: "esto que llega de fuera, ¿tiene la forma que espero?".
+**Con `pydantic-settings`**, `Settings()` lee las variables de entorno (y el archivo `.env`) automáticamente, y además **convierte y valida el tipo** de cada valor (texto → `Path`, por ejemplo): si un valor no encaja con lo declarado, falla al arrancar, no a mitad de ejecución. Es el mismo trabajo que hace Zod cuando validas el body de una request en una API de Next.js: "esto que llega de fuera, ¿tiene la forma que espero?".
 
 `VaultConfig` en el mismo archivo hace lo mismo pero para `configs/demo.yaml`:
 
@@ -65,23 +66,27 @@ Si el YAML tiene un campo mal escrito o le falta `name`, `VaultConfig.load(path)
 
 **En una frase:** `pydantic` es Zod para Python — declaras la forma de los datos una vez, y valida y convierte automáticamente cada vez que algo entra desde fuera (`.env`, YAML, en el futuro: JSON de la API).
 
-## 3. SQLite: qué es, literal, y qué hace cada archivo nuevo
+## 3. Postgres + pgvector: qué es, literal, y qué hace cada archivo nuevo
+
+> Actualizado el 23 nov 2026: la primera versión de esta fase usaba SQLite. Se cambió a Postgres + pgvector porque es lo habitual en la industria ([ADR 0007](../adr/0007-postgres-pgvector-en-windows-nativo.md)).
 
 **Sin base de datos**, para guardar 400 notas con sus metadatos tendrías que inventarte tu propio formato de archivo y tu propia forma de buscar en él ("abre todos los `.json`, parsea cada uno, filtra a mano").
 
-**Con SQLite**, `data/hipocampo.db` es **un solo archivo binario** en tu disco (no un servidor que arranca y escucha un puerto, como haría Postgres). Cuando ejecutas:
+**Con Postgres**, la base de datos es **un programa aparte** que corre todo el rato en tu Windows como servicio (`postgresql-x64-17`) y escucha en un puerto (`5432`), igual que tu `npm run dev` escucha en el 3000. Tu código no abre un archivo: **se conecta** a ese programa, se identifica con usuario y contraseña, y le manda SQL:
 
 ```python
-conn = sqlite3.connect("data/hipocampo.db")
-conn.execute("SELECT * FROM notes WHERE area = ?", ("rrhh",))
+conn = psycopg.connect("postgresql://hipocampo:hipocampo@localhost:5432/hipocampo")
+conn.execute("SELECT * FROM notes WHERE area = %s", ("rrhh",))
 ```
 
-Python abre ese archivo, lo lee con el motor de SQLite (viene incluido en Python, no se instala nada aparte) y te devuelve filas. Es exactamente igual de literal que abrir un archivo con `fs.readFile` en Node, solo que en vez de texto plano, el archivo tiene una estructura de tablas que SQLite sabe leer e indexar rápido.
+Esa cadena es la `DATABASE_URL` de tu `.env`, y se lee por partes: `usuario:contraseña@máquina:puerto/base_de_datos`. Es exactamente el mismo modelo que un `fetch("http://localhost:3000/api/notes")` desde React: hay un servidor escuchando, tú le haces peticiones. `psycopg` es la librería que habla el protocolo de Postgres desde Python (el equivalente a `pg` en Node).
+
+**pgvector** es una **extensión**: un añadido que se instala en Postgres y le enseña un tipo de columna nuevo, `vector(384)`, con operadores de distancia (`<=>` es coseno) e índices para buscar vecinos cercanos rápido (HNSW). Por eso en `001_init.sql` el embedding es una columna más de `chunks`, al lado del texto.
 
 **Una migración** (`db/migrations/001_init.sql`) es, literal, un archivo con comandos `CREATE TABLE`. `storage/db.py` tiene una función, `run_migrations`, que:
 
 1. Mira qué archivos de `db/migrations/*.sql` ya se ejecutaron antes (los apunta en una tabla, `schema_migrations`).
-2. Ejecuta los que falten, en orden, uno por uno.
+2. Ejecuta los que falten, en orden, cada uno en su propia transacción.
 
 ```python
 def run_migrations(conn, migrations_dir=MIGRATIONS_DIR):
@@ -90,13 +95,14 @@ def run_migrations(conn, migrations_dir=MIGRATIONS_DIR):
         version = path.stem  # "001_init"
         if version in done:
             continue  # ya se ejecutó, no la repitas
-        conn.executescript(path.read_text())  # ejecuta el CREATE TABLE...
-        conn.execute("INSERT INTO schema_migrations VALUES (?)", (version,))
+        with conn.transaction():  # o todo o nada
+            conn.execute(path.read_text())  # ejecuta el CREATE TABLE...
+            conn.execute("INSERT INTO schema_migrations (version) VALUES (%s)", (version,))
 ```
 
-Así, si mañana añades `002_add_chunks_fts.sql`, cualquiera que ejecute `uv run hipocampo init-db` (tú, yo, o GitHub Actions en otra máquina) acaba con exactamente las mismas tablas, sin que nadie tenga que acordarse de qué comandos ejecutar a mano.
+Así, si mañana añades `002_algo.sql`, cualquiera que ejecute `uv run hipocampo init-db` (tú, yo, o GitHub Actions en otra máquina) acaba con exactamente las mismas tablas, sin que nadie tenga que acordarse de qué comandos ejecutar a mano. Y como en Postgres hasta un `CREATE TABLE` va dentro de la transacción, si una migración falla a medias no deja tablas sueltas.
 
-**Por qué SQLite y no Postgres** (la decisión original): está en [ADR 0002](../adr/0002-sqlite-en-windows-nativo.md). Resumen de una línea: Postgres es un programa aparte que tendrías que instalar y tener siempre arrancado (como un `npm run dev` que nunca para); SQLite es solo un archivo, cero instalación en Windows.
+**Una trampa que ya nos mordió:** `psycopg` abre una transacción con la primera consulta y no la cierra hasta que haces `commit()`. Si no la cierras, todo lo que hiciste se pierde al cerrar la conexión, sin error. Por eso `applied_migrations` hace `conn.commit()` antes de devolver.
 
 **En una frase:** una migración es un archivo con instrucciones `CREATE TABLE`, y `run_migrations` es la función que se asegura de que cada instrucción se ejecute **una sola vez**, en el orden correcto, en cualquier máquina.
 
@@ -143,7 +149,7 @@ elif sys.argv[1] == "version":
 No es una convención decorativa: es que **cada archivo solo puede hablar con el siguiente**, nunca al revés.
 
 - `domain.py` no importa nada del proyecto: son solo las "formas" de los datos (`Note`, `Chunk`...). Como los `types.ts` de un proyecto de TypeScript.
-- `storage/db.py` solo sabe hablar con SQLite. No sabe qué es una "Estrategia de recuperación" ni nada de negocio.
+- `storage/db.py` solo sabe hablar con Postgres. No sabe qué es una "Estrategia de recuperación" ni nada de negocio.
 - `cli.py` no sabe cómo se aplica una migración: solo llama a `connect()` y `run_migrations()` y pinta el resultado en pantalla.
 
 Esto importa porque, cuando en la Fase 4 aparezca `retrieval/service.py` (la pieza que decide cómo buscar), el MCP server, la API y la CLI van a llamar **a la misma función** `search(...)`. Si la lógica estuviera repartida dentro de `cli.py`, tendrías que copiarla tres veces, una por cada puerta de entrada.
@@ -152,7 +158,7 @@ Esto importa porque, cuando en la Fase 4 aparezca `retrieval/service.py` (la pie
 
 Antes de pasar a la Fase 1, intenta responder esto sin mirar el código (está en el README por si quieres contarlo fuera):
 
-1. Si borro `data/hipocampo.db` y ejecuto `uv run hipocampo init-db` otra vez, ¿qué pasa? ¿Y si lo ejecuto dos veces seguidas sin borrar nada?
+1. Si ejecuto `uv run hipocampo init-db` dos veces seguidas, ¿qué pasa la segunda vez? ¿Y si el servicio de Postgres está parado?
 2. ¿Qué diferencia hay entre lo que valida `pydantic` en `Settings` y lo que valida en `VaultConfig`? ¿De dónde viene cada uno?
 3. Si quisiera añadir un comando nuevo `uv run hipocampo stats`, ¿en qué archivo lo escribirías y qué NO debería hacer esa función directamente?
 

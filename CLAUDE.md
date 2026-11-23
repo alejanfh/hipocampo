@@ -20,11 +20,12 @@ Lee antes de trabajar:
 ## Reglas técnicas
 
 - Python 3.12 con `uv`. Antes de dar algo por terminado: `uv run ruff check --fix`, `uv run ruff format`, `uv run pytest`.
-- Capas: `retrieval/service.py` tiene la lógica; `mcp_server.py`, `api.py` y `cli.py` son finos y solo llaman al servicio; el acceso a SQLite está en `storage/`.
+- Capas: `retrieval/service.py` tiene la lógica; `mcp_server.py`, `api.py` y `cli.py` son finos y solo llaman al servicio; el acceso a Postgres está en `storage/` (`psycopg` 3, SQL a mano).
 - SQL plano en `db/migrations/NNN_*.sql`. Nunca cambies una migración ya aplicada: añade otra.
 - Código, nombres, comentarios y commits en **inglés**. README, CONTEXT.md y docs/ (SPEC, PLAN, ADRs, aprendizajes) en **español**: el README explica qué es un RAG y es material de aprendizaje.
 - Nada de APIs de pago ni servicios en la nube. Modelos en local y en CPU.
-- Entorno: Windows nativo (sin WSL2 ni Docker) en un Ryzen 5 1600 con 16 GB. Procesa embeddings por lotes y no cargues dos modelos grandes a la vez.
+- Entorno: Windows nativo (sin WSL2 ni Docker) en un Ryzen 5 1600 con 16 GB. Postgres 17 + pgvector corren nativos como servicio de Windows ([ADR 0007](docs/adr/0007-postgres-pgvector-en-windows-nativo.md), [guía](docs/INSTALACION-WINDOWS.md)). Procesa embeddings por lotes y no cargues dos modelos grandes a la vez.
+- Los tests de base de datos usan `TEST_DATABASE_URL` (una base aparte que vacían en cada ejecución), nunca `DATABASE_URL`. Si no encuentran Postgres se saltan; en CI son obligatorios.
 
 ## Privacidad (no negociable)
 

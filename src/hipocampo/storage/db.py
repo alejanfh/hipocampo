@@ -1,62 +1,63 @@
-"""SQLite connection and migrations. See docs/adr/0002-sqlite-en-windows-nativo.md
-for why SQLite instead of a server database, and docs/SPEC.md §9 for the schema.
+"""Postgres connection and migrations. See
+docs/adr/0007-postgres-pgvector-en-windows-nativo.md for why Postgres +
+pgvector, and docs/SPEC.md §9 for the schema.
 """
 
 from __future__ import annotations
 
-import sqlite3
 from pathlib import Path
+
+import psycopg
+from psycopg.rows import dict_row
 
 MIGRATIONS_DIR = Path(__file__).resolve().parents[3] / "db" / "migrations"
 
+Connection = psycopg.Connection[dict]
 
-def connect(database_path: Path) -> sqlite3.Connection:
-    """Open a connection with the settings this project relies on everywhere:
-    - `PRAGMA foreign_keys = ON`: SQLite ignores `REFERENCES ... ON DELETE
-      CASCADE` unless you ask for it, on every single connection.
-    - `row_factory = sqlite3.Row`: lets repositories read columns by name
-      instead of by position, which is what the rest of the code expects.
+
+def connect(database_url: str) -> Connection:
+    """Open a connection to the Postgres server at `database_url`.
+
+    Unlike a file database, nothing is created here: the server must be
+    running and the database must already exist (README, "Cómo empezar").
+    `row_factory=dict_row` lets repositories read columns by name
+    (`row["title"]`) instead of by position.
     """
-    database_path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(database_path)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
-    try_load_vec_extension(conn)
-    return conn
+    return psycopg.connect(database_url, row_factory=dict_row)
 
 
-def try_load_vec_extension(conn: sqlite3.Connection) -> bool:
-    """Load the sqlite-vec extension if it's installed. Returns whether it
-    loaded. Safe to call even before phase 3, when nothing needs it yet —
-    `chunk_embeddings` (the vec0 virtual table) is only created once this
-    succeeds.
+def register_vector_type(conn: Connection) -> None:
+    """Teach psycopg to send/receive pgvector's `vector` type as numpy
+    arrays. Only possible once `CREATE EXTENSION vector` has run in this
+    database (the first migration does it), so call it after migrating.
+    Nothing needs it until phase 3.
     """
-    try:
-        import sqlite_vec  # type: ignore[import-not-found]
-    except ImportError:
-        return False
+    from pgvector.psycopg import register_vector
 
-    conn.enable_load_extension(True)
-    sqlite_vec.load(conn)
-    conn.enable_load_extension(False)
-    return True
+    register_vector(conn)
 
 
-def applied_migrations(conn: sqlite3.Connection) -> set[str]:
+def applied_migrations(conn: Connection) -> set[str]:
     conn.execute(
         "CREATE TABLE IF NOT EXISTS schema_migrations ("
         "version TEXT PRIMARY KEY, "
-        "applied_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')))"
+        "applied_at TIMESTAMPTZ NOT NULL DEFAULT now())"
     )
+    conn.commit()
     rows = conn.execute("SELECT version FROM schema_migrations").fetchall()
+    # psycopg opens a transaction on the first query and keeps it open until
+    # commit. Close it, so each migration below gets its own real transaction
+    # instead of a savepoint inside this one (which `close()` would discard).
+    conn.commit()
     return {row["version"] for row in rows}
 
 
-def run_migrations(conn: sqlite3.Connection, migrations_dir: Path = MIGRATIONS_DIR) -> list[str]:
+def run_migrations(conn: Connection, migrations_dir: Path = MIGRATIONS_DIR) -> list[str]:
     """Apply every `NNN_*.sql` file in `migrations_dir` that hasn't run yet,
-    in filename order, each inside its own transaction. Never edit a
-    migration that has already been applied anywhere — add a new one
-    (CLAUDE.md "Reglas técnicas").
+    in filename order, each inside its own transaction. In Postgres even
+    `CREATE TABLE` is transactional, so a migration that fails halfway
+    leaves nothing behind. Never edit a migration that has already been
+    applied anywhere — add a new one (CLAUDE.md "Reglas técnicas").
     """
     done = applied_migrations(conn)
     applied: list[str] = []
@@ -65,11 +66,10 @@ def run_migrations(conn: sqlite3.Connection, migrations_dir: Path = MIGRATIONS_D
         if version in done:
             continue
         sql = path.read_text(encoding="utf-8")
-        with conn:
-            conn.executescript(sql)
-            conn.execute(
-                "INSERT INTO schema_migrations (version) VALUES (?)",
-                (version,),
-            )
+        with conn.transaction():
+            # No parameters, so psycopg sends the whole file as one
+            # multi-statement script.
+            conn.execute(sql)  # type: ignore[arg-type]
+            conn.execute("INSERT INTO schema_migrations (version) VALUES (%s)", (version,))
         applied.append(version)
     return applied

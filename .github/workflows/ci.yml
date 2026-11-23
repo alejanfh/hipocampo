@@ -8,6 +8,29 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+
+    # A throwaway Postgres with pgvector for the storage tests. Docker only
+    # lives here, in CI: on Alejandro's machine Postgres runs natively on
+    # Windows (docs/adr/0007-postgres-pgvector-en-windows-nativo.md).
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: hipocampo
+          POSTGRES_PASSWORD: hipocampo
+          POSTGRES_DB: hipocampo_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U hipocampo"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      TEST_DATABASE_URL: postgresql://hipocampo:hipocampo@localhost:5432/hipocampo_test
+      REQUIRE_TEST_DATABASE: "1"
+
     steps:
       - uses: actions/checkout@v4
 

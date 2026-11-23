@@ -31,7 +31,8 @@ Cada fase deja algo que funciona y una cifra medida. No se pasa a la siguiente s
 
 **Objetivo:** entorno listo y repo vacío pero sano.
 
-- Instalar en Windows: `uv` (instalador oficial, PowerShell), Python 3.12 (con `uv python install`), Node LTS, Claude Code. Nada de WSL2 ni Docker: todo nativo ([ADR 0002](adr/0002-sqlite-en-windows-nativo.md)).
+- Instalar en Windows: `uv` (instalador oficial, PowerShell), Python 3.12 (con `uv python install`), Node LTS, Claude Code. Nada de WSL2 ni Docker: todo nativo.
+- Instalar **Postgres 17 + pgvector** nativos siguiendo [INSTALACION-WINDOWS.md](INSTALACION-WINDOWS.md): Postgres con el instalador de EDB, pgvector compilado con las Build Tools de Visual Studio, usuario `hipocampo` y bases `hipocampo` y `hipocampo_test` ([ADR 0007](adr/0007-postgres-pgvector-en-windows-nativo.md)).
 - El repo vive en una ruta corta sin espacios, p. ej. `C:\Users\<tu-usuario>\code\hipocampo` (evita rutas con tildes o OneDrive, que dan problemas a algunas librerías de Python en Windows).
 - Crear el repo público `hipocampo` en GitHub y clonarlo.
 - Copiar estos documentos (CLAUDE.md, CONTEXT.md, docs/).
@@ -39,9 +40,9 @@ Cada fase deja algo que funciona y una cifra medida. No se pasa a la siguiente s
 - `db/migrations/001_init.sql` aplicado.
 - GitHub Actions: ruff + pytest en cada push.
 
-**Hecho cuando:** `uv run pytest` pasa, `uv run hipocampo --help` responde y el archivo `data/hipocampo.db` existe con las tablas creadas.
+**Hecho cuando:** `uv run pytest` pasa sin tests saltados, `uv run hipocampo --help` responde y `psql -U hipocampo -d hipocampo -c "\dt"` ve las tablas.
 
-**Conceptos:** entornos virtuales y lockfiles; `.env` y separar configuración de código; qué es una migración (y por qué funciona igual con SQLite que con un servidor).
+**Conceptos:** entornos virtuales y lockfiles; `.env` y separar configuración de código; qué es una migración; qué es un servidor de base de datos (servicio, puerto, usuarios y roles) y qué es una extensión de Postgres.
 
 ## Fase 1 · Vault demo y set de evaluación (≈4 h)
 
@@ -61,7 +62,7 @@ Cada fase deja algo que funciona y una cifra medida. No se pasa a la siguiente s
 **Objetivo:** la primera cifra.
 
 - `ingest/`: discover, parse (frontmatter, wikilinks, encabezados, quitar dataview), chunk por encabezados. Tests con Notas pequeñas de ejemplo.
-- Guardar en `notes` y `chunks` (sin embeddings aún: columna rellenada en fase 3, o migración aparte).
+- Guardar en `notes` y `chunks` (sin embeddings aún: la columna `embedding` queda a NULL hasta la fase 3).
 - `retrieval/lexical.py` con bm25s + stemming español.
 - `eval/`: cargar el set, recall@5, MRR, temporal@1, latencia, informe en Markdown.
 - `hipocampo eval search --strategy lexical`.
@@ -70,12 +71,12 @@ Cada fase deja algo que funciona y una cifra medida. No se pasa a la siguiente s
 
 **Conceptos:** BM25 (TF, IDF, normalización por longitud); stemming y stopwords; recall@k y MRR; tests unitarios en Python.
 
-## Fase 3 · Embeddings y sqlite-vec (≈5 h)
+## Fase 3 · Embeddings y pgvector (≈5 h)
 
 **Objetivo:** búsqueda semántica y la primera comparación.
 
 - `ingest/embed.py` con e5-small (prefijos `passage:`/`query:`), por lotes, con barra de progreso.
-- `retrieval/semantic.py` con HNSW por coseno.
+- `retrieval/semantic.py`: vecinos más cercanos por coseno (`<=>`) con el índice HNSW de pgvector; medir el efecto de `hnsw.ef_search` frente a la búsqueda exacta.
 - Comparar 2-3 tamaños de Chunk (p. ej. 200/400/800 tokens).
 - Experimento: e5-small vs bge-m3 (recall, tiempo de indexado, latencia, RAM).
 
@@ -138,7 +139,7 @@ Cada fase deja algo que funciona y una cifra medida. No se pasa a la siguiente s
 
 - README final en inglés: problema, arquitectura, tablas, decisiones con enlace a los ADRs, cómo ejecutarlo.
 - Post de LinkedIn con la tabla y el GIF.
-- Línea de CV con las cifras reales, p. ej.: *"Built Hipocampo, a local hybrid-search engine over Obsidian knowledge bases exposed to Claude via MCP (Python, SQLite/sqlite-vec, FastAPI, Next.js); evaluation-driven: recall@5 from X% (BM25) to Y% (hybrid + rerank), and measured when RAG beats full-context and grep-based agentic search."*
+- Línea de CV con las cifras reales, p. ej.: *"Built Hipocampo, a local hybrid-search engine over Obsidian knowledge bases exposed to Claude via MCP (Python, Postgres/pgvector, FastAPI, Next.js); evaluation-driven: recall@5 from X% (BM25) to Y% (hybrid + rerank), and measured when RAG beats full-context and grep-based agentic search."*
 
 ## Fase 10 (opcional) · Permisos por departamento
 

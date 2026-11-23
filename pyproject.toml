@@ -11,6 +11,8 @@ dependencies = [
     "pyyaml>=6.0",
     "typer>=0.13",
     "rich>=13.9",
+    "psycopg[binary]>=3.2",
+    "pgvector>=0.3",
 ]
 
 [project.optional-dependencies]
@@ -18,7 +20,6 @@ dependencies = [
 # what that phase needs. Collapse into [project].dependencies once stable.
 ingest = [
     "sentence-transformers>=3.3",
-    "sqlite-vec>=0.1.6",
 ]
 mcp = [
     "mcp>=1.1",
