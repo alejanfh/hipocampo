@@ -1,5 +1,7 @@
 # SQLite + sqlite-vec, en Windows nativo sin WSL2 ni Docker
 
+> **Estado: sustituida** por el [ADR 0007](0007-postgres-pgvector-en-windows-nativo.md) (23 nov 2026): se vuelve a Postgres + pgvector, instalado nativo en Windows. Se conserva para entender el cambio.
+
 La base de datos es un único archivo SQLite (`data/hipocampo.db`), con la extensión `sqlite-vec` para los vectores y `FTS5` (incorporado en SQLite) para la búsqueda léxica con BM25. Todo corre en Windows nativo: sin WSL2, sin Linux de por medio, sin Docker Desktop. Alejandro prefiere trabajar así, y evita instalar y mantener un servidor de base de datos en un equipo que no es el más potente (Ryzen 5 1600, 16 GB).
 
 Se sustituye así la decisión original (Postgres + pgvector en WSL2, ADR 0002 previo), que daba más parecido a un cliente real pero obligaba a instalar y aprender WSL2.
